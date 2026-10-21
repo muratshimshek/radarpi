@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*.log
+.venv/
+
+# Runtime output and potentially identifying evidence
+ihlaller/
+violations/
+debug_frames*/
+video_frames*/
+video_debug/
+tmp_plate_manual/
+*.jpg
+*.jpeg
+*.png
+
+# Local configuration/state
+radar_gate_config.json
+
+# Local snapshots and obsolete experiments
+backups/
+*_backup*.py
+*_backup*.html

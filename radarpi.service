@@ -1,0 +1,26 @@
+[Unit]
+Description=RadarPi Speed Detection System
+After=graphical.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=radarpi
+WorkingDirectory=/home/radarpi/radar
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/radarpi/.Xauthority
+# VISTA dogrulamasi fail-open calisir: model/yol hata verirse fotograf korunur ve OCR devam eder.
+Environment=RADAR_AI_MODEL=/home/radarpi/radar/models/yolox_s.onnx
+Environment=RADAR_AI_THREADS=2
+Environment=RADAR_AI_CONFIDENCE=0.25
+Environment=RADAR_AI_REJECT_MODE=move
+Environment=RADAR_AI_NICE=10
+Environment=RADAR_OCR_SINGLE_MIN_CONFIDENCE=0.98
+ExecStart=/usr/bin/python3 /home/radarpi/radar/radar_gate.py
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical.target
