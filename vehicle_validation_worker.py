@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Asynchronous VISTA/YOLOX vehicle validation for saved violations.
-
-The radar timing loop never waits for this module.  A persistent child process
-loads the ONNX model once, validates saved images, narrows the OCR search to the
-selected vehicle, and then runs the existing plate reader.
-"""
+"""Asynchronous YOLOX vehicle validation for captured violations."""
 
 from __future__ import annotations
 
@@ -85,11 +80,11 @@ def _class_aware_nms(detections: list[VehicleDetection], threshold: float = 0.45
 
 
 class YoloXVehicleDetector:
-    """OpenCV-DNN implementation of VISTA's raw YOLOX-s contract."""
+    """YOLOX-s inference through OpenCV DNN."""
 
     def __init__(self, model_path: Path, confidence: float = 0.25, threads: int = 2) -> None:
         if not model_path.is_file():
-            raise FileNotFoundError(f"YOLOX model bulunamadi: {model_path}")
+            raise FileNotFoundError(f"YOLOX model not found: {model_path}")
         cv2.setNumThreads(max(1, int(threads)))
         self.net = cv2.dnn.readNetFromONNX(str(model_path))
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
@@ -103,7 +98,6 @@ class YoloXVehicleDetector:
         resized_height = max(1, int(height * scale))
         canvas = np.full((640, 640, 3), 114, dtype=np.uint8)
         canvas[:resized_height, :resized_width] = cv2.resize(image, (resized_width, resized_height))
-        # VISTA contract: BGR8 -> RGB float CHW, values remain in 0..255.
         blob = cv2.dnn.blobFromImage(canvas, scalefactor=1.0, size=(640, 640), swapRB=True, crop=False)
         self.net.setInput(blob)
         output = np.asarray(self.net.forward(), dtype=np.float32)
@@ -167,13 +161,13 @@ def _write_vehicle_crops(image: np.ndarray, detection: VehicleDetection, stem: s
     x2, y2 = min(image_w, x2 + pad_x), min(image_h, y2 + pad_y)
     vehicle = image[y1:y2, x1:x2]
     if vehicle.size == 0:
-        raise RuntimeError("Secilen arac kutusu bos")
+        raise RuntimeError("Selected vehicle crop is empty")
     lower_start = int(round(vehicle.shape[0] * 0.42))
     lower = vehicle[lower_start:, :]
     vehicle_path = AI_CROP_DIR / f"{stem}_vehicle.jpg"
     lower_path = AI_CROP_DIR / f"{stem}_vehicle_lower.jpg"
     if not cv2.imwrite(str(vehicle_path), vehicle) or not cv2.imwrite(str(lower_path), lower):
-        raise RuntimeError("Arac OCR crop dosyalari yazilamadi")
+        raise RuntimeError("Vehicle OCR crops could not be written")
     return lower_path, vehicle_path
 
 
@@ -190,8 +184,6 @@ def _choose_ocr_result(results: list[dict[str, Any]], single_min_confidence: flo
     is_six_digit_numeric = len(plate) == 6 and plate.isdigit()
     if votes >= 2:
         return plate, confidence, "six_digit_multi_crop_consensus" if is_six_digit_numeric else "multi_crop_consensus"
-    # A six-digit numeric candidate is never accepted from one crop alone;
-    # road signs, timestamps and speed overlays frequently contain only digits.
     if is_six_digit_numeric:
         return None, None, "six_digit_candidate_requires_consensus"
     if len(valid) == 1 and confidence is not None and confidence >= single_min_confidence:
@@ -256,13 +248,13 @@ def _reject_image(job: VehicleValidationJob, logger: logging.Logger) -> tuple[st
     mode = os.environ.get("RADAR_AI_REJECT_MODE", "move").strip().lower()
     if mode == "delete":
         path.unlink(missing_ok=True)
-        logger.info("Arac bulunamadi; fotograf silindi: %s", path)
+        logger.info("No vehicle found; image deleted: %s", path)
         return "rejected_deleted", None
     if mode == "keep":
         destination = path.with_name(_status_filename(path, "_ARAC_YOK"))
         if path != destination and path.exists():
             path.rename(destination)
-        logger.info("Arac bulunamadi; fotograf ARAC_YOK olarak korundu: %s", destination)
+        logger.info("No vehicle found; image retained: %s", destination)
         return "rejected_kept", str(destination)
     rejected_dir = path.parent / "rejected"
     rejected_dir.mkdir(parents=True, exist_ok=True)
@@ -270,7 +262,7 @@ def _reject_image(job: VehicleValidationJob, logger: logging.Logger) -> tuple[st
     if destination.exists():
         destination = rejected_dir / f"{path.stem}_ARAC_YOK_{int(time.time())}{path.suffix}"
     shutil.move(str(path), str(destination))
-    logger.info("Arac bulunamadi; fotograf rejected klasorune tasindi: %s", destination)
+    logger.info("No vehicle found; image moved to rejected directory: %s", destination)
     return "rejected_moved", str(destination)
 
 
@@ -289,10 +281,10 @@ def _worker_main(job_queue: Any) -> None:
             confidence=float(os.environ.get("RADAR_AI_CONFIDENCE", "0.25")),
             threads=int(os.environ.get("RADAR_AI_THREADS", "2")),
         )
-        logger.info("VISTA YOLOX modeli yuklendi: %s", model_path)
+        logger.info("YOLOX vehicle model loaded: %s", model_path)
     except Exception as exc:
         # Fail open: validation must never destroy evidence when AI is unavailable.
-        logger.exception("VISTA modeli yuklenemedi; fotograflar korunup mevcut OCR calisacak: %s", exc)
+        logger.exception("Vehicle model failed to load; images will be preserved and OCR will continue: %s", exc)
 
     while True:
         item = job_queue.get()
@@ -303,7 +295,7 @@ def _worker_main(job_queue: Any) -> None:
         try:
             image = cv2.imread(str(path))
             if image is None:
-                raise RuntimeError(f"Ihlal fotografi okunamadi: {path}")
+                raise RuntimeError(f"Violation image could not be read: {path}")
             if detector is None:
                 _write_metadata(job, "ai_unavailable_fail_open", [], None)
                 _run_ocr([path], job, logger)
@@ -326,7 +318,7 @@ def _worker_main(job_queue: Any) -> None:
             )
             _run_ocr([lower_path, vehicle_path, path], job, logger)
         except Exception as exc:
-            logger.exception("Arac dogrulama hatasi event=%s image=%s: %s", job.event_id, path, exc)
+            logger.exception("Vehicle validation failed event=%s image=%s: %s", job.event_id, path, exc)
             try:
                 _write_metadata(job, "validation_error_fail_open", [], None, error=str(exc))
                 if path.is_file():
@@ -395,7 +387,7 @@ def _cli() -> int:
     """Pi kurulumunda modeli ve tek fotografi OCR calistirmadan test et."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="RadarPi VISTA arac dogrulama testi")
+    parser = argparse.ArgumentParser(description="RadarPi vehicle validation test")
     parser.add_argument("image", help="Test edilecek fotograf")
     parser.add_argument("--model", default=str(DEFAULT_MODEL_PATH), help="YOLOX-s ONNX model yolu")
     parser.add_argument("--confidence", type=float, default=0.25)
@@ -403,7 +395,7 @@ def _cli() -> int:
     args = parser.parse_args()
     image = cv2.imread(args.image)
     if image is None:
-        raise SystemExit(f"Fotograf okunamadi: {args.image}")
+        raise SystemExit(f"Image could not be read: {args.image}")
     started = time.perf_counter()
     detector = YoloXVehicleDetector(Path(args.model), args.confidence, args.threads)
     detections = detector.detect(image)

@@ -1,18 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-Iki sanal kapidan parlaklik degisimiyle hiz olcen minimal radar sistemi.
-
-Ilk surum ozellikle sade tutulmustur:
-- YOLO yok
-- tracker yok
-- contour arama yok
-- OCR yok
-- yalnizca START / FINISH ROI bantlari var
-- adaptive background ile ROI motion olculur
-- state machine ile t1 / t2 kilitlenir
-"""
+"""Raspberry Pi 5 speed measurement and post-capture vehicle validation."""
 
 from __future__ import annotations
 
@@ -1105,27 +1094,27 @@ def create_web_app(web_state: WebState, control_state: ControlState, logger: log
       <button id="btnSOL" class="btn">SOL</button>
       <button id="btnSAG" class="btn">SAG</button>
       <button id="btnMENU" class="btn">MENU</button>
-      <button id="btnViolations" class="btn secondary">Ihlaller</button>
-      <button id="btnFullscreen" class="btn secondary">Tam Ekran</button>
+      <button id="btnViolations" class="btn secondary">Violations</button>
+      <button id="btnFullscreen" class="btn secondary">Fullscreen</button>
     </div>
     <div id="menuPanel" class="menu">
       <div class="menu-group">
-        <button class="btn" data-mode="edit_start">Sari Cizgi Duzenle</button>
+        <button class="btn" data-mode="edit_start">Edit Start Gate</button>
       </div>
       <div class="menu-group">
-        <button class="btn" data-mode="edit_finish">Kirmizi Cizgi Duzenle</button>
+        <button class="btn" data-mode="edit_finish">Edit Finish Gate</button>
       </div>
       <div class="menu-group">
         <button id="btnDistance" class="btn">Mesafe Gir</button>
       </div>
       <div class="menu-group">
-        <button id="btnSpeedLimit" class="btn">Hiz Limiti Gir</button>
+        <button id="btnSpeedLimit" class="btn">Set Speed Limit</button>
       </div>
       <div class="menu-group">
         <button id="btnTestMode" class="btn">Test Mode</button>
       </div>
       <div class="menu-group">
-        <button id="btnClose" class="btn secondary">Kapat</button>
+        <button id="btnClose" class="btn secondary">Close</button>
       </div>
     </div>
     <div class="panel">
@@ -1137,8 +1126,8 @@ def create_web_app(web_state: WebState, control_state: ControlState, logger: log
         </div>
       </div>
       <div class="aux-links">
-        <a id="lastViolationLink" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">Son Ihlal</a>
-        <a href="/violations" target="_blank" rel="noopener noreferrer">Tum Ihlaller</a>
+        <a id="lastViolationLink" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">Latest Violation</a>
+        <a href="/violations" target="_blank" rel="noopener noreferrer">All Violations</a>
       </div>
       <pre id="status" style="display:none;">Yukleniyor...</pre><!--
           <a id="lastViolationLink" href="#" target="_blank" rel="noopener noreferrer" style="color:#8ab4ff; text-decoration:none;">Son İhlal</a>
@@ -1210,22 +1199,22 @@ def create_web_app(web_state: WebState, control_state: ControlState, logger: log
         document.getElementById('btnMENU').classList.toggle('active', !!data.menu_open);
         const btnTestMode = document.getElementById('btnTestMode');
         btnTestMode.classList.toggle('active', !!data.test_mode);
-        btnTestMode.textContent = data.test_mode ? 'Test Mode Kapat' : 'Test Mode Ac';
+        btnTestMode.textContent = data.test_mode ? 'Disable Test Mode' : 'Enable Test Mode';
         redrawOverlay();
         const link = document.getElementById('lastViolationLink');
         if (data.last_violation_url) {
           link.style.display = 'inline';
           link.href = data.last_violation_url;
-          link.textContent = 'Son Ihlal: ' + (data.last_violation || 'Ac');
+          link.textContent = 'Latest Violation: ' + (data.last_violation || 'Open');
           link.textContent = 'Son İhlal: ' + (data.last_violation || 'Ac');
-          link.textContent = 'Son Ihlal: ' + (data.last_violation || 'Ac');
+          link.textContent = 'Latest Violation: ' + (data.last_violation || 'Open');
         } else {
           link.style.display = 'none';
           link.href = '#';
         }
       } catch (err) {
-        document.getElementById('status').textContent = 'Status okunamadi: ' + err;
-        document.getElementById('hudBox').textContent = 'Status okunamadi: ' + err;
+        document.getElementById('status').textContent = 'Status unavailable: ' + err;
+        document.getElementById('hudBox').textContent = 'Status unavailable: ' + err;
       }
     }
 
@@ -1285,7 +1274,7 @@ def create_web_app(web_state: WebState, control_state: ControlState, logger: log
     };
     document.getElementById('btnSpeedLimit').onclick = async () => {
       const current = latestStatus ? latestStatus.speed_limit_kmh : 50.0;
-      const value = window.prompt('Hiz limiti (km/h)', String(current));
+      const value = window.prompt('Speed limit (km/h)', String(current));
       if (!value) return;
       const parsed = Number(String(value).replace(',', '.'));
       if (!Number.isFinite(parsed) || parsed <= 0) return;
@@ -1537,7 +1526,7 @@ def create_web_app(web_state: WebState, control_state: ControlState, logger: log
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ihlaller</title>
+  <title>Violations</title>
   <style>
     body {{ background:#111; color:#eee; font-family:Arial,sans-serif; margin:0; padding:24px; }}
     .wrap {{ max-width:980px; margin:0 auto; }}
@@ -1547,9 +1536,9 @@ def create_web_app(web_state: WebState, control_state: ControlState, logger: log
 </head>
 <body>
   <div class="wrap">
-    <h2>Ihlaller</h2>
+    <h2>Violations</h2>
     <p><a href="/">Geri Don</a></p>
-    <ul>{''.join(items) if items else '<li>Henuz ihlal yok.</li>'}</ul>
+    <ul>{''.join(items) if items else '<li>No violations recorded.</li>'}</ul>
     <div style="margin-top:18px;">
       <p><a href="/violations/csv/event_log.csv" target="_blank" rel="noopener noreferrer">CSV Event Logunu Ac</a></p>
       <form method="post" action="/violations/csv/clear" onsubmit="return confirm('CSV event log icerigi temizlensin mi?');" style="margin-top:10px;">
@@ -1635,13 +1624,13 @@ def create_web_app(web_state: WebState, control_state: ControlState, logger: log
 </head>
 <body>
   <div class="topbar">
-    <a class="btn secondary" href="/violations">Tum Ihlaller</a>
-    <a class="btn secondary" href="/violations/raw/{escape(filename)}" target="_blank" rel="noopener noreferrer">Ham Dosya</a>
-    <form method="post" action="/violations/delete/{escape(filename)}" onsubmit="return confirm('Bu ihlali silmek istiyor musunuz?');" style="margin:0;">
-      <button class="btn secondary" type="submit">Sil</button>
+    <a class="btn secondary" href="/violations">All Violations</a>
+    <a class="btn secondary" href="/violations/raw/{escape(filename)}" target="_blank" rel="noopener noreferrer">Raw File</a>
+    <form method="post" action="/violations/delete/{escape(filename)}" onsubmit="return confirm('Delete this violation?');" style="margin:0;">
+      <button class="btn secondary" type="submit">Delete</button>
     </form>
-    <form method="post" action="/violations/delete_all" onsubmit="return confirm('Tum ihlalleri silmek istiyor musunuz?');" style="margin:0;">
-      <button class="btn secondary" type="submit">Tumunu Sil</button>
+    <form method="post" action="/violations/delete_all" onsubmit="return confirm('Delete all violations?');" style="margin:0;">
+      <button class="btn secondary" type="submit">Delete All</button>
     </form>
     <span>{escape(filename)}</span>
   </div>
@@ -2142,9 +2131,6 @@ def main() -> None:
                 runtime.last_process_ms,
             )
 
-            # Arac dogrulama worker'i aracsiz kareyi asenkron olarak
-            # ``ihlaller/rejected`` altina tasiyabilir. Bu durumda ana ekranda
-            # artik var olmayan bir "Son Ihlal" baglantisi gostermeyelim.
             last_violation_name = runtime.last_violation_text
             if last_violation_name not in ("", "--"):
                 last_violation_path = VIOLATION_DIR / last_violation_name

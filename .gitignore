@@ -13,11 +13,12 @@ tmp_plate_manual/
 *.jpg
 *.jpeg
 *.png
+!docs/assets/*.png
 
 # Local configuration/state
 radar_gate_config.json
 
-# Local snapshots and obsolete experiments
+# Local snapshots
 backups/
 *_backup*.py
 *_backup*.html

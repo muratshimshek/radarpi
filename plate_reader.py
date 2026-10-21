@@ -140,10 +140,6 @@ def _normalize_plate_candidate(text: str) -> Optional[str]:
     if len(cleaned) < 5:
         return None
 
-    # Six-digit numeric plates use a separate, strict format.
-    # Preserve leading zeroes and never apply civilian O/I/S/B/Z corrections.
-    # Keeping this branch exact prevents an alphanumeric civilian plate such as
-    # Ordinary province-letter-number plates cannot enter this numeric path.
     if SIX_DIGIT_PLATE_REGEX.fullmatch(cleaned):
         return cleaned
 
